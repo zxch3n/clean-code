@@ -1,3 +1,3 @@
 fn main() -> anyhow::Result<()> {
-    clean_code::run()
+    clean_my_code::run()
 }

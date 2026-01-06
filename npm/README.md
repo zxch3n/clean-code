@@ -1,16 +1,16 @@
-# clean-code (npm)
+# clean-my-code (npm)
 
-This npm package is a thin wrapper around the Rust `clean-code` CLI.
+This npm package is a thin wrapper around the Rust `clean-my-code` CLI.
 
-On install, it downloads a prebuilt binary for your OS/CPU and exposes the `clean-code` command.
+On install, it downloads a prebuilt binary for your OS/CPU and exposes the `clean-my-code` command.
 
 ## Quick Start
 
 ```bash
-npx clean-code
+npx clean-my-code
 # or
-npm i -g clean-code
-clean-code
+npm i -g clean-my-code
+clean-my-code
 ```
 
 ## Requirements
@@ -22,29 +22,29 @@ clean-code
 
 ```bash
 # Default (TUI)
-clean-code
+clean-my-code
 
 # Choose scan root
-clean-code --root /path/to/workspace
+clean-my-code --root /path/to/workspace
 
 # Scan-only (no TUI)
-clean-code scan
+clean-my-code scan
 
 # TUI with options
-clean-code tui --min-size 1MiB
-clean-code tui --dry-run
+clean-my-code tui --min-size 1MiB
+clean-my-code tui --dry-run
 
 # Control parallelism
-clean-code --threads 8
+clean-my-code --threads 8
 
 # Add artifact dir names (repeatable)
-clean-code --artifact .gradle --artifact .venv
+clean-my-code --artifact .gradle --artifact .venv
 
 # Only use your custom list (disable built-ins)
-clean-code --no-default-artifacts --artifact target --artifact node_modules
+clean-my-code --no-default-artifacts --artifact target --artifact node_modules
 ```
 
-Run `clean-code --help` for the full CLI reference.
+Run `clean-my-code --help` for the full CLI reference.
 
 ## TUI keybindings
 
@@ -68,5 +68,5 @@ If your platform isn’t covered, build from source (Rust required).
 
 ## Install Details & Troubleshooting
 
-- This package downloads a prebuilt binary during `npm install` into `vendor/` and runs it via a small JS shim at `bin/clean-code.js`.
-- To use a custom mirror, set `CLEAN_CODE_DOWNLOAD_BASE` to a base URL that mirrors the GitHub Releases layout.
+- This package downloads a prebuilt binary during `npm install` into `vendor/` and runs it via a small JS shim at `bin/clean-my-code.js`.
+- To use a custom mirror, set `CLEAN_MY_CODE_DOWNLOAD_BASE` (or legacy `CLEAN_CODE_DOWNLOAD_BASE`) to a base URL that mirrors the GitHub Releases layout.

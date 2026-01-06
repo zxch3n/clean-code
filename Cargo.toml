@@ -1,5 +1,5 @@
 [package]
-name = "clean-code"
+name = "clean-my-code"
 version = "0.1.0"
 edition = "2024"
 exclude = ["npm/"]

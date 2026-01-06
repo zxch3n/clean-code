@@ -872,7 +872,7 @@ fn render_main(frame: &mut Frame, scan_root: &Path, options: &TuiOptions, app: &
 
     let header = Paragraph::new(Text::from(vec![
         Line::from(format!(
-            "clean-code  show>={}  auto-select>=180d{}  sort={sort_label}",
+            "clean-my-code  show>={}  auto-select>=180d{}  sort={sort_label}",
             format_bytes(options.min_size_bytes),
             dry_run_label
         )),

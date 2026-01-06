@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /*
-  Downloads the prebuilt clean-code binary for the current platform
+  Downloads the prebuilt clean-my-code binary for the current platform
   into vendor/ and makes it executable. Used by npm postinstall.
 */
 const fs = require('fs');
@@ -45,12 +45,13 @@ function detectTarget() {
 function makeUrl(version, target) {
   // Prefer mirror if provided, else GitHub Releases.
   const base =
+    process.env.CLEAN_MY_CODE_DOWNLOAD_BASE ||
     process.env.CLEAN_CODE_DOWNLOAD_BASE ||
     `https://github.com/${REPO}/releases/download`;
   const filename =
     process.platform === 'win32'
-      ? `clean-code-v${version}-${target}.exe`
-      : `clean-code-v${version}-${target}`;
+      ? `clean-my-code-v${version}-${target}.exe`
+      : `clean-my-code-v${version}-${target}`;
   return `${base}/v${version}/${filename}`;
 }
 
@@ -95,7 +96,7 @@ function download(url, dest) {
     const doReq = (u, redirectsLeft = 5) => {
       const lib = getLib(u);
       const opts = {
-        headers: { 'User-Agent': 'clean-code-installer' },
+        headers: { 'User-Agent': 'clean-my-code-installer' },
       };
       const agent = chooseAgent(u);
       if (agent) opts.agent = agent;
@@ -126,7 +127,7 @@ async function main() {
   const target = detectTarget();
   if (!target) {
     console.error(
-      `[clean-code] Unsupported platform: ${process.platform} ${process.arch}`,
+      `[clean-my-code] Unsupported platform: ${process.platform} ${process.arch}`,
     );
     console.error('Please build from source (Rust required).');
     process.exit(1);
@@ -135,14 +136,15 @@ async function main() {
   const url = makeUrl(version, target);
   const vendor = path.join(__dirname, '..', 'vendor');
   ensureDir(vendor);
-  const exeName = process.platform === 'win32' ? 'clean-code.exe' : 'clean-code';
+  const exeName =
+    process.platform === 'win32' ? 'clean-my-code.exe' : 'clean-my-code';
   const dest = path.join(vendor, exeName);
 
-  console.log(`[clean-code] downloading ${url}`);
+  console.log(`[clean-my-code] downloading ${url}`);
   try {
     await download(url, dest);
   } catch (err) {
-    console.error('[clean-code] download failed:', err.message);
+    console.error('[clean-my-code] download failed:', err.message);
     console.error('You can try again or build from source (Rust required).');
     process.exit(1);
   }
@@ -152,11 +154,10 @@ async function main() {
       fs.chmodSync(dest, 0o755);
     } catch {}
   }
-  console.log('[clean-code] installed to', dest);
+  console.log('[clean-my-code] installed to', dest);
 }
 
 main().catch((e) => {
-  console.error('[clean-code] install error:', e);
+  console.error('[clean-my-code] install error:', e);
   process.exit(1);
 });
-

@@ -1,4 +1,4 @@
-# clean-code
+# clean-my-code
 
 A small, super fast tool to scan and remove **gitignored build artifacts** (e.g. `target/`, `node_modules/`, `dist/`) across a workspace, **grouped by Git repo root**.
 
@@ -22,9 +22,9 @@ Instead of blindly deleting by directory name, it verifies candidates with `git 
 Option 1: via npm (prebuilt binary)
 
 ```bash
-npx clean-code
+npx clean-my-code
 # or
-npm i -g clean-code
+npm i -g clean-my-code
 ```
 
 Option 2: build from source (Rust required)
@@ -42,47 +42,47 @@ cargo run --release -- --help
 Default (TUI):
 
 ```bash
-clean-code
+clean-my-code
 ```
 
 Choose scan root:
 
 ```bash
-clean-code --root /path/to/workspace
+clean-my-code --root /path/to/workspace
 ```
 
 Control parallelism (Rayon):
 
 ```bash
-clean-code --threads 8
+clean-my-code --threads 8
 ```
 
 TUI options:
 
 ```bash
-clean-code tui --min-size 1MiB
-clean-code tui --dry-run
+clean-my-code tui --min-size 1MiB
+clean-my-code tui --dry-run
 ```
 
 Scan-only report (no TUI):
 
 ```bash
-clean-code scan
+clean-my-code scan
 ```
 
 Add artifact dir names (repeatable):
 
 ```bash
-clean-code --artifact .gradle --artifact .venv
+clean-my-code --artifact .gradle --artifact .venv
 ```
 
 Only use your custom list (disable built-ins):
 
 ```bash
-clean-code --no-default-artifacts --artifact target --artifact node_modules
+clean-my-code --no-default-artifacts --artifact target --artifact node_modules
 ```
 
-Run `clean-code --help` for the full CLI reference.
+Run `clean-my-code --help` for the full CLI reference.
 
 ## TUI keybindings
 

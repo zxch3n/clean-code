@@ -1,10 +1,10 @@
 {
-  "name": "clean-code",
+  "name": "clean-my-code",
   "version": "0.1.0",
   "description": "Scan and clean gitignored build artifacts per Git repo.",
   "license": "UNLICENSED",
   "bin": {
-    "clean-code": "bin/clean-code.js"
+    "clean-my-code": "bin/clean-my-code.js"
   },
   "scripts": {
     "postinstall": "node scripts/install.js"

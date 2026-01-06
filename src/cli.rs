@@ -79,7 +79,7 @@ const DEFAULT_ARTIFACT_DIR_NAMES: [&str; 60] = [
 ];
 
 #[derive(Parser, Debug)]
-#[command(name = "clean-code")]
+#[command(name = "clean-my-code")]
 #[command(about = "Scan and clean gitignored build artifacts per Git repo.")]
 pub struct Cli {
     #[command(flatten)]

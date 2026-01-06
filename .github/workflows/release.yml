@@ -117,14 +117,14 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           target="${{ matrix.target }}"
 
-          bin="clean-code"
+          bin="clean-my-code"
           ext=""
           if [[ "${{ runner.os }}" == "Windows" ]]; then
-            bin="clean-code.exe"
+            bin="clean-my-code.exe"
             ext=".exe"
           fi
 
-          asset="clean-code-v${version}-${target}${ext}"
+          asset="clean-my-code-v${version}-${target}${ext}"
           cp "target/${target}/release/${bin}" "${asset}"
           if [[ "${{ runner.os }}" != "Windows" ]]; then
             chmod +x "${asset}"
@@ -139,4 +139,3 @@ jobs:
         run: |
           set -euo pipefail
           gh release upload "${GITHUB_REF_NAME}" "${ASSET}" --clobber
-
