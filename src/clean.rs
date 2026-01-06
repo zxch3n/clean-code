@@ -2,7 +2,6 @@ use std::{
     ffi::OsStr,
     fs,
     path::{Path, PathBuf},
-    time::{Duration, SystemTime},
 };
 
 use anyhow::anyhow;
@@ -36,12 +35,7 @@ pub struct DeleteSummary {
     pub errors: Vec<(PathBuf, anyhow::Error)>,
 }
 
-pub fn plan_delete_targets<'a, I>(
-    reports: I,
-    now: SystemTime,
-    stale_for: Duration,
-    clean_all: bool,
-) -> Vec<DeleteTarget>
+pub fn plan_delete_targets<'a, I>(reports: I) -> Vec<DeleteTarget>
 where
     I: IntoIterator<Item = (&'a RepoReport, bool)>,
 {
@@ -52,10 +46,6 @@ where
         }
 
         for artifact in &report.artifacts {
-            if !clean_all && !artifact.is_stale(now, stale_for) {
-                continue;
-            }
-
             targets.push(DeleteTarget {
                 repo_root: report.repo_root.clone(),
                 path: artifact.path.clone(),

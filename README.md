@@ -8,7 +8,7 @@
 - 发现疑似 artifacts 的目录名后（例如 `target/`、`node_modules/`、`dist/`），使用 `git check-ignore` 判定其是否真的被忽略
 - 对被忽略的目录计算体积与最近修改时间（递归累加文件大小；默认不跟随 symlink）
 - 按 “artifact 所属的最近 Git 仓库根目录” 分组
-- 默认进入 TUI：默认预选 “最近修改时间距今 >= 180d 且体积 >= 1MiB” 的 stale artifacts，回车后删除选中的 artifacts
+- 默认进入 TUI：默认预选 “最近修改时间距今 >= 180d 且体积 >= 1MiB” 的 repos，回车后删除选中 repos 下的 artifacts
 - 也支持 `scan` 子命令：按每个仓库的最新 commit 时间从老到新排序输出统计结果
 
 ## Usage
@@ -34,7 +34,7 @@ cargo run --release -- --threads 8
 TUI 参数：
 
 ```bash
-cargo run --release -- tui --stale-days 30 --min-size 1MiB
+cargo run --release -- tui --min-size 1MiB
 ```
 
 TUI 键位：
@@ -43,6 +43,7 @@ TUI 键位：
 - Space：切换选中
 - a：全选
 - n：全不选
+- Tab：切换排序（age/size）
 - Enter：确认并删除（会有二次确认）
 - q / Esc：退出
 
@@ -50,12 +51,6 @@ TUI 键位：
 
 ```bash
 cargo run --release -- tui --dry-run
-```
-
-删除所有被忽略的 artifacts（不做 stale 过滤）：
-
-```bash
-cargo run --release -- tui --clean-all
 ```
 
 仅输出统计（scan）：
@@ -82,6 +77,7 @@ cargo run --release -- --no-default-artifacts --artifact target --artifact node_
 
 - `target`
 - `node_modules`
+- `bower_components`
 - `dist`
 - `build`
 - `out`
@@ -101,19 +97,48 @@ cargo run --release -- --no-default-artifacts --artifact target --artifact node_
 - `.dart_tool`
 - `.venv`
 - `venv`
+- `env`
+- `ENV`
 - `.tox`
+- `.nox`
 - `.direnv`
 - `bin`
 - `obj`
+- `Debug`
+- `Release`
+- `.vs`
+- `packages`
+- `CMakeFiles`
+- `cmake-build-debug`
+- `cmake-build-release`
+- `cmake-build-relwithdebinfo`
+- `cmake-build-minsizerel`
+- `Pods`
+- `Carthage`
+- `.swiftpm`
+- `.build`
+- `DerivedData`
 - `coverage`
 - `.pytest_cache`
 - `__pycache__`
 - `.mypy_cache`
 - `.ruff_cache`
+- `.ipynb_checkpoints`
+- `htmlcov`
+- `.pyre`
+- `.pytype`
+- `elm-stuff`
+- `storybook-static`
+- `_site`
+- `public`
+- `dist-newstyle`
+- `.stack-work`
 - `tmp`
+- `temp`
 
 ## Notes
 
 - 体积统计为 “文件大小之和”，不等同于磁盘块占用（`du`）。
 - 目录判定依赖本机 `git` 可执行文件，并以 Git 的 ignore 规则为准（含 `.gitignore` / `.git/info/exclude` / global excludes）。
+- 为了安全，默认清单会跳过少数可能包含本地状态的目录（例如 `.pulumi` / `.vagrant`）；如确有需要，可用 `--artifact` 显式追加。
 - TUI 基于 `ratatui` + `crossterm`，理论上可跨平台运行；如遇键位/渲染异常，优先检查终端类型与输入法/快捷键冲突。

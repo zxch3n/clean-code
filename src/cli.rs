@@ -5,38 +5,77 @@ use clap::{Args, Parser, Subcommand};
 
 use crate::{report::collect_reports, report::print_scan_report, tui::TuiOptions};
 
-const DEFAULT_ARTIFACT_DIR_NAMES: [&str; 31] = [
+const DEFAULT_ARTIFACT_DIR_NAMES: [&str; 60] = [
+    // General build outputs.
     "target",
-    "node_modules",
     "dist",
     "build",
     "out",
+    "bin",
+    "obj",
+    "Debug",
+    "Release",
+    // Frontend / JS / Node.
+    "node_modules",
+    "bower_components",
+    "elm-stuff",
     ".next",
     ".nuxt",
     ".svelte-kit",
     ".astro",
+    "storybook-static",
+    "_site",
+    "public",
     ".vercel",
     ".turbo",
     ".cache",
     ".parcel-cache",
     ".vite",
     ".angular",
-    ".gradle",
-    ".terraform",
-    ".serverless",
-    ".dart_tool",
-    ".venv",
-    "venv",
-    ".tox",
-    ".direnv",
-    "bin",
-    "obj",
-    "coverage",
-    ".pytest_cache",
+    // Python / tooling.
     "__pycache__",
+    ".pytest_cache",
     ".mypy_cache",
     ".ruff_cache",
+    ".tox",
+    ".nox",
+    ".venv",
+    "venv",
+    "env",
+    "ENV",
+    ".direnv",
+    ".ipynb_checkpoints",
+    "htmlcov",
+    ".pyre",
+    ".pytype",
+    // JVM / Haskell / build tools.
+    ".gradle",
+    "dist-newstyle",
+    ".stack-work",
+    // .NET / Visual Studio.
+    ".vs",
+    "packages",
+    // CMake (CLion).
+    "CMakeFiles",
+    "cmake-build-debug",
+    "cmake-build-release",
+    "cmake-build-relwithdebinfo",
+    "cmake-build-minsizerel",
+    // Apple platforms.
+    "Pods",
+    "Carthage",
+    ".swiftpm",
+    ".build",
+    "DerivedData",
+    // Mobile / Flutter.
+    ".dart_tool",
+    // Infra / DevOps.
+    ".terraform",
+    ".serverless",
+    // Misc.
+    "coverage",
     "tmp",
+    "temp",
 ];
 
 #[derive(Parser, Debug)]
@@ -74,14 +113,8 @@ enum Command {
 
 #[derive(Args, Debug, Clone)]
 struct TuiArgs {
-    #[arg(long, default_value_t = 30)]
-    stale_days: u64,
-
     #[arg(long, default_value = "1MiB")]
     min_size: ByteSize,
-
-    #[arg(long)]
-    clean_all: bool,
 
     #[arg(long)]
     dry_run: bool,
@@ -165,9 +198,7 @@ fn run_with_cli(cli: Cli) -> Result<()> {
 
     let command = cli.command.unwrap_or_else(|| {
         Command::Tui(TuiArgs {
-            stale_days: 30,
             min_size: ByteSize::from_str("1MiB").unwrap_or(ByteSize(1024 * 1024)),
-            clean_all: false,
             dry_run: false,
         })
     });
@@ -196,9 +227,7 @@ fn run_with_cli(cli: Cli) -> Result<()> {
             artifact_dir_names,
             cli.common.threads,
             TuiOptions {
-                stale_days: args.stale_days,
                 min_size_bytes: args.min_size.as_u64(),
-                clean_all: args.clean_all,
                 dry_run: args.dry_run,
             },
         ),

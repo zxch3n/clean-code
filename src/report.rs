@@ -2,7 +2,7 @@ use std::{
     collections::{HashMap, HashSet},
     ffi::OsString,
     path::{Path, PathBuf},
-    time::{Duration, SystemTime},
+    time::SystemTime,
 };
 
 use rayon::prelude::*;
@@ -20,19 +20,6 @@ pub struct ArtifactRecord {
     pub stats: DirStats,
 }
 
-impl ArtifactRecord {
-    pub fn is_stale(&self, now: SystemTime, stale_for: Duration) -> bool {
-        let Some(newest) = self.stats.newest_mtime else {
-            return true;
-        };
-
-        match now.duration_since(newest) {
-            Ok(age) => age >= stale_for,
-            Err(_) => false,
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct RepoReport {
     pub repo_root: PathBuf,
@@ -40,16 +27,6 @@ pub struct RepoReport {
     pub artifacts: Vec<ArtifactRecord>,
     pub total_size_bytes: u64,
     pub newest_mtime: Option<SystemTime>,
-}
-
-impl RepoReport {
-    pub fn stale_size_bytes(&self, now: SystemTime, stale_for: Duration) -> u64 {
-        self.artifacts
-            .iter()
-            .filter(|a| a.is_stale(now, stale_for))
-            .map(|a| a.stats.size_bytes)
-            .sum()
-    }
 }
 
 pub fn collect_reports(

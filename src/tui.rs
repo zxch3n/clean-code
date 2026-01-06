@@ -23,8 +23,8 @@ use ratatui::{
     Frame,
     backend::CrosstermBackend,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
-    text::{Line, Text},
+    style::{Color, Modifier, Style},
+    text::{Line, Span, Text},
     widgets::{
         Block, Borders, Cell, Clear, HighlightSpacing, Paragraph, Row, Table, TableState, Wrap,
     },
@@ -44,9 +44,7 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub struct TuiOptions {
-    pub stale_days: u64,
     pub min_size_bytes: u64,
-    pub clean_all: bool,
     pub dry_run: bool,
 }
 
@@ -57,7 +55,6 @@ pub fn run(
     options: TuiOptions,
 ) -> Result<()> {
     let now = SystemTime::now();
-    let stale_for = Duration::from_secs(options.stale_days.saturating_mul(24 * 60 * 60));
 
     let (tx, rx) = mpsc::channel::<AppEvent>();
     let scan_cancel = Arc::new(AtomicBool::new(false));
@@ -70,7 +67,7 @@ pub fn run(
         tx.clone(),
     );
 
-    let mut app = App::new(now, stale_for);
+    let mut app = App::new(now);
     let mut terminal = TerminalGuard::enter().context("failed to initialize terminal")?;
 
     loop {
@@ -227,8 +224,8 @@ enum CleanEvent {
 #[derive(Debug)]
 struct App {
     now: SystemTime,
-    stale_for: Duration,
 
+    sort_mode: SortMode,
     items: Vec<RepoItem>,
     table_state: TableState,
     pending_heads: HashMap<PathBuf, Option<GitHead>>,
@@ -246,14 +243,29 @@ struct App {
     new_repo_default_selected: Option<bool>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SortMode {
+    Age,
+    Size,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SortKey {
+    Age(Option<SystemTime>),
+    Size {
+        bytes: u64,
+        time: Option<SystemTime>,
+    },
+}
+
 impl App {
-    fn new(now: SystemTime, stale_for: Duration) -> Self {
+    fn new(now: SystemTime) -> Self {
         let mut table_state = TableState::default();
         table_state.select(None);
 
         Self {
             now,
-            stale_for,
+            sort_mode: SortMode::Age,
             items: Vec::new(),
             table_state,
             pending_heads: HashMap::new(),
@@ -267,6 +279,15 @@ impl App {
             artifacts_found: 0,
             new_repo_default_selected: None,
         }
+    }
+
+    fn toggle_sort_mode(&mut self, options: &TuiOptions) {
+        self.sort_mode = match self.sort_mode {
+            SortMode::Age => SortMode::Size,
+            SortMode::Size => SortMode::Age,
+        };
+
+        self.sort_keep_cursor(options);
     }
 
     fn apply_event(&mut self, scan_root: &Path, options: &TuiOptions, event: AppEvent) {
@@ -341,6 +362,8 @@ impl App {
 
     fn upsert_artifact(&mut self, scan_root: &Path, options: &TuiOptions, record: ArtifactRecord) {
         let repo_root = record.repo_root.clone();
+        let sort_mode = self.sort_mode;
+        let now = self.now;
         if let Some(item) = self
             .items
             .iter_mut()
@@ -350,8 +373,7 @@ impl App {
                 return;
             }
 
-            let old_sort_key =
-                primary_newest_mtime(&item.report, options, self.now, self.stale_for);
+            let old_sort_key = Self::sort_key_for_report(sort_mode, &item.report);
 
             item.report.total_size_bytes = item
                 .report
@@ -368,11 +390,10 @@ impl App {
             });
 
             if item.selection_mode == SelectionMode::Auto {
-                item.selected = should_auto_select(&item.report, options, self.now, self.stale_for);
+                item.selected = should_auto_select(&item.report, options, now);
             }
 
-            let new_sort_key =
-                primary_newest_mtime(&item.report, options, self.now, self.stale_for);
+            let new_sort_key = Self::sort_key_for_report(sort_mode, &item.report);
 
             if old_sort_key != new_sort_key {
                 self.sort_keep_cursor(options);
@@ -400,7 +421,7 @@ impl App {
         let (selected, selection_mode) = match self.new_repo_default_selected {
             Some(selected) => (selected, SelectionMode::Manual),
             None => (
-                should_auto_select(&report, options, self.now, self.stale_for),
+                should_auto_select(&report, options, now),
                 SelectionMode::Auto,
             ),
         };
@@ -417,15 +438,43 @@ impl App {
         self.ensure_selection_valid(options);
     }
 
+    fn sort_key_for_report(sort_mode: SortMode, report: &RepoReport) -> SortKey {
+        match sort_mode {
+            SortMode::Age => SortKey::Age(report.newest_mtime),
+            SortMode::Size => SortKey::Size {
+                bytes: report.total_size_bytes,
+                time: report.newest_mtime,
+            },
+        }
+    }
+
     fn sort_keep_cursor(&mut self, options: &TuiOptions) {
         let current_repo_root = self.selected_repo_root(options);
 
-        self.items.sort_by(|a, b| {
-            let a_time = primary_newest_mtime(&a.report, options, self.now, self.stale_for);
-            let b_time = primary_newest_mtime(&b.report, options, self.now, self.stale_for);
+        match self.sort_mode {
+            SortMode::Age => {
+                self.items.sort_by(|a, b| {
+                    let a_time = a.report.newest_mtime;
+                    let b_time = b.report.newest_mtime;
 
-            cmp_time_key(a_time, b_time).then_with(|| a.report.repo_root.cmp(&b.report.repo_root))
-        });
+                    cmp_time_key(a_time, b_time)
+                        .then_with(|| a.report.repo_root.cmp(&b.report.repo_root))
+                });
+            }
+            SortMode::Size => {
+                self.items.sort_by(|a, b| {
+                    let a_bytes = a.report.total_size_bytes;
+                    let b_bytes = b.report.total_size_bytes;
+                    let a_time = a.report.newest_mtime;
+                    let b_time = b.report.newest_mtime;
+
+                    b_bytes
+                        .cmp(&a_bytes)
+                        .then_with(|| cmp_time_key(a_time, b_time))
+                        .then_with(|| a.report.repo_root.cmp(&b.report.repo_root))
+                });
+            }
+        }
 
         self.restore_selection(options, current_repo_root);
     }
@@ -455,7 +504,7 @@ impl App {
         if let Some(repo_root) = repo_root {
             let mut row = 0usize;
             for item in &self.items {
-                if !is_visible(&item.report, options, self.now, self.stale_for) {
+                if !is_visible(&item.report, options) {
                     continue;
                 }
 
@@ -474,7 +523,7 @@ impl App {
         let selected_row = self.table_state.selected()?;
         let mut row = 0usize;
         for item in &self.items {
-            if !is_visible(&item.report, options, self.now, self.stale_for) {
+            if !is_visible(&item.report, options) {
                 continue;
             }
 
@@ -489,7 +538,7 @@ impl App {
     fn visible_len(&self, options: &TuiOptions) -> usize {
         self.items
             .iter()
-            .filter(|item| is_visible(&item.report, options, self.now, self.stale_for))
+            .filter(|item| is_visible(&item.report, options))
             .count()
     }
 
@@ -542,12 +591,9 @@ impl App {
             return;
         };
 
-        let now = self.now;
-        let stale_for = self.stale_for;
-
         let mut row = 0usize;
         for item in &mut self.items {
-            if !is_visible(&item.report, options, now, stale_for) {
+            if !is_visible(&item.report, options) {
                 continue;
             }
             if row == selected_row {
@@ -682,15 +728,13 @@ fn handle_key_main(
         KeyCode::Char(' ') => app.toggle_current(options),
         KeyCode::Char('a') => app.select_all(true),
         KeyCode::Char('n') => app.select_all(false),
+        KeyCode::Tab => app.toggle_sort_mode(options),
         KeyCode::Enter => {
             let targets = plan_delete_targets(
                 app.items
                     .iter()
-                    .filter(|item| is_visible(&item.report, options, app.now, app.stale_for))
+                    .filter(|item| is_visible(&item.report, options))
                     .map(|item| (&item.report, item.selected)),
-                app.now,
-                app.stale_for,
-                options.clean_all,
             );
 
             if targets.is_empty() {
@@ -704,9 +748,7 @@ fn handle_key_main(
             let selected_repos = app
                 .items
                 .iter()
-                .filter(|item| {
-                    item.selected && is_visible(&item.report, options, app.now, app.stale_for)
-                })
+                .filter(|item| item.selected && is_visible(&item.report, options))
                 .count();
 
             app.screen = Screen::Confirm(ConfirmData {
@@ -815,25 +857,22 @@ fn render_main(frame: &mut Frame, scan_root: &Path, options: &TuiOptions, app: &
         ])
         .split(area);
 
-    let (planned_dirs, reclaim_bytes, selected_repos) =
-        summarize_selection(&app.items, options, app.now, app.stale_for);
+    let (planned_dirs, reclaim_bytes, selected_repos) = summarize_selection(&app.items, options);
     let visible_repos = app
         .items
         .iter()
-        .filter(|item| is_visible(&item.report, options, app.now, app.stale_for))
+        .filter(|item| is_visible(&item.report, options))
         .count();
 
-    let mode_label = if options.clean_all {
-        "all"
-    } else {
-        "stale-only"
-    };
     let dry_run_label = if options.dry_run { " DRY RUN" } else { "" };
+    let sort_label = match app.sort_mode {
+        SortMode::Age => "age",
+        SortMode::Size => "size",
+    };
 
     let header = Paragraph::new(Text::from(vec![
         Line::from(format!(
-            "clean-code ({mode_label})  stale>={}d  show>={}  auto-select>=180d{}",
-            options.stale_days,
+            "clean-code  show>={}  auto-select>=180d{}  sort={sort_label}",
             format_bytes(options.min_size_bytes),
             dry_run_label
         )),
@@ -852,18 +891,14 @@ fn render_main(frame: &mut Frame, scan_root: &Path, options: &TuiOptions, app: &
     let visible_items: Vec<Row<'static>> = app
         .items
         .iter()
-        .filter(|item| is_visible(&item.report, options, app.now, app.stale_for))
-        .map(|item| render_repo_row(item, options, app.now, app.stale_for))
+        .filter(|item| is_visible(&item.report, options))
+        .map(|item| render_repo_row(item, app.now))
         .collect();
 
     if visible_items.is_empty() {
         let threshold = format_bytes(options.min_size_bytes);
         let message = if app.scan_done {
-            if options.clean_all {
-                format!("No gitignored artifacts >= {threshold} found.")
-            } else {
-                format!("No stale artifacts >= {threshold} found.")
-            }
+            format!("No gitignored artifacts >= {threshold} found.")
         } else {
             "Scanning...".to_string()
         };
@@ -872,13 +907,22 @@ fn render_main(frame: &mut Frame, scan_root: &Path, options: &TuiOptions, app: &
     } else {
         app.ensure_selection_valid(options);
 
+        let (size_label, age_label) = match app.sort_mode {
+            SortMode::Age => ("Size", "Age*"),
+            SortMode::Size => ("Size*", "Age"),
+        };
+
         let header = Row::new(vec![
             Cell::from("Sel"),
-            Cell::from(Text::from("Size").alignment(Alignment::Right)),
-            Cell::from(Text::from("Age").alignment(Alignment::Right)),
+            Cell::from(Text::from(size_label).alignment(Alignment::Right)),
+            Cell::from(Text::from(age_label).alignment(Alignment::Right)),
             Cell::from("Repo"),
         ])
-        .style(Style::default().add_modifier(Modifier::BOLD));
+        .style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        );
 
         let widths = [
             Constraint::Length(3),
@@ -891,37 +935,56 @@ fn render_main(frame: &mut Frame, scan_root: &Path, options: &TuiOptions, app: &
             .header(header)
             .column_spacing(1)
             .highlight_spacing(HighlightSpacing::Never)
-            .row_highlight_style(Style::default().add_modifier(Modifier::REVERSED));
+            .row_highlight_style(
+                Style::default()
+                    .bg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD),
+            );
         frame.render_stateful_widget(table, layout[1], &mut app.table_state);
     }
 
     let footer = Paragraph::new(Text::from(vec![
-        Line::from("Up/Down move  Space toggle  a all  n none  Enter clean  q quit"),
+        help_line(),
         Line::from(progress_line(app)),
     ]))
     .wrap(Wrap { trim: true });
     frame.render_widget(footer, layout[2]);
 }
 
-fn render_repo_row(
-    item: &RepoItem,
-    options: &TuiOptions,
-    now: SystemTime,
-    stale_for: Duration,
-) -> Row<'static> {
+fn render_repo_row(item: &RepoItem, now: SystemTime) -> Row<'static> {
     let checkbox = if item.selected { "[x]" } else { "[ ]" };
-    let (bytes, _count) = primary_stats(&item.report, options, now, stale_for);
+    let bytes = item.report.total_size_bytes;
     let size = format_bytes(bytes);
-    let age_days = primary_age_days(&item.report, options, now, stale_for)
+    let age_days = repo_age_days(&item.report, now)
         .map(|d| format!("{d}d"))
         .unwrap_or_else(|| "-".to_string());
 
     Row::new(vec![
         Cell::from(checkbox.to_string()),
-        Cell::from(Text::from(size).alignment(Alignment::Right)),
+        Cell::from(Text::from(size).alignment(Alignment::Right)).style(size_style(bytes)),
         Cell::from(Text::from(age_days).alignment(Alignment::Right)),
         Cell::from(item.repo_display.clone()),
     ])
+}
+
+fn size_style(bytes: u64) -> Style {
+    const MIB: u64 = 1024 * 1024;
+    const GIB: u64 = 1024 * MIB;
+    const BRIGHT_BYTES: u64 = 100 * MIB;
+    const LOUD_BYTES: u64 = GIB;
+    const EXTRA_BOLD_BYTES: u64 = 10 * GIB;
+
+    if bytes >= EXTRA_BOLD_BYTES {
+        Style::default()
+            .fg(Color::LightRed)
+            .add_modifier(Modifier::BOLD)
+    } else if bytes >= LOUD_BYTES {
+        Style::default().fg(Color::LightRed)
+    } else if bytes >= BRIGHT_BYTES {
+        Style::default().fg(Color::LightYellow)
+    } else {
+        Style::default()
+    }
 }
 
 fn render_confirm(
@@ -1033,7 +1096,7 @@ fn render_result(frame: &mut Frame, scan_root: &Path, app: &App) {
 
 fn confirm_message(scan_root: &Path, options: &TuiOptions, confirm: &ConfirmData) -> Text<'static> {
     let dry_run_label = if options.dry_run { " (dry run)" } else { "" };
-    let mut lines = vec![
+    let lines = vec![
         Line::from(format!("root: {}", scan_root.display())),
         Line::from(format!(
             "plan: delete {} artifact dirs from {} repos, reclaim {}{}",
@@ -1045,15 +1108,6 @@ fn confirm_message(scan_root: &Path, options: &TuiOptions, confirm: &ConfirmData
         Line::from(""),
         Line::from("Press 'y' to confirm, 'n' to cancel."),
     ];
-
-    if options.clean_all {
-        lines.insert(2, Line::from("mode: clean all gitignored artifacts"));
-    } else {
-        lines.insert(
-            2,
-            Line::from(format!("mode: stale-only (age>={}d)", options.stale_days)),
-        );
-    }
 
     Text::from(lines)
 }
@@ -1119,53 +1173,11 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
     horizontal[1]
 }
 
-fn primary_stats(
-    report: &RepoReport,
-    options: &TuiOptions,
-    now: SystemTime,
-    stale_for: Duration,
-) -> (u64, usize) {
-    if options.clean_all {
-        return (report.total_size_bytes, report.artifacts.len());
-    }
-
-    let stale_bytes = report.stale_size_bytes(now, stale_for);
-    let stale_count = report
-        .artifacts
-        .iter()
-        .filter(|a| a.is_stale(now, stale_for))
-        .count();
-    (stale_bytes, stale_count)
-}
-
-fn primary_age_days(
-    report: &RepoReport,
-    options: &TuiOptions,
-    now: SystemTime,
-    stale_for: Duration,
-) -> Option<u64> {
-    let newest = primary_newest_mtime(report, options, now, stale_for)?;
+fn repo_age_days(report: &RepoReport, now: SystemTime) -> Option<u64> {
+    let newest = report.newest_mtime?;
     now.duration_since(newest)
         .ok()
         .map(|d| d.as_secs() / (24 * 60 * 60))
-}
-
-fn primary_newest_mtime(
-    report: &RepoReport,
-    options: &TuiOptions,
-    now: SystemTime,
-    stale_for: Duration,
-) -> Option<SystemTime> {
-    if options.clean_all {
-        return report.newest_mtime;
-    }
-
-    report
-        .artifacts
-        .iter()
-        .filter(|a| a.is_stale(now, stale_for))
-        .filter_map(|a| a.stats.newest_mtime)
-        .max()
 }
 
 fn cmp_time_key(a: Option<SystemTime>, b: Option<SystemTime>) -> CmpOrdering {
@@ -1177,48 +1189,31 @@ fn cmp_time_key(a: Option<SystemTime>, b: Option<SystemTime>) -> CmpOrdering {
     }
 }
 
-fn is_visible(
-    report: &RepoReport,
-    options: &TuiOptions,
-    now: SystemTime,
-    stale_for: Duration,
-) -> bool {
-    let (bytes, count) = primary_stats(report, options, now, stale_for);
-    bytes >= options.min_size_bytes && count > 0
+fn is_visible(report: &RepoReport, options: &TuiOptions) -> bool {
+    report.total_size_bytes >= options.min_size_bytes && !report.artifacts.is_empty()
 }
 
-fn should_auto_select(
-    report: &RepoReport,
-    options: &TuiOptions,
-    now: SystemTime,
-    stale_for: Duration,
-) -> bool {
+fn should_auto_select(report: &RepoReport, options: &TuiOptions, now: SystemTime) -> bool {
     const AUTO_SELECT_DAYS: u64 = 180;
 
-    let (bytes, count) = primary_stats(report, options, now, stale_for);
-    if bytes < options.min_size_bytes || count == 0 {
+    if report.total_size_bytes < options.min_size_bytes || report.artifacts.is_empty() {
         return false;
     }
 
-    let Some(age_days) = primary_age_days(report, options, now, stale_for) else {
+    let Some(age_days) = repo_age_days(report, now) else {
         return false;
     };
 
     age_days >= AUTO_SELECT_DAYS
 }
 
-fn summarize_selection(
-    items: &[RepoItem],
-    options: &TuiOptions,
-    now: SystemTime,
-    stale_for: Duration,
-) -> (usize, u64, usize) {
+fn summarize_selection(items: &[RepoItem], options: &TuiOptions) -> (usize, u64, usize) {
     let mut planned_dirs = 0usize;
     let mut reclaim_bytes = 0u64;
     let mut selected_repos = 0usize;
 
     for item in items {
-        if !is_visible(&item.report, options, now, stale_for) {
+        if !is_visible(&item.report, options) {
             continue;
         }
 
@@ -1226,9 +1221,8 @@ fn summarize_selection(
             continue;
         }
         selected_repos += 1;
-        let (bytes, count) = primary_stats(&item.report, options, now, stale_for);
-        planned_dirs += count;
-        reclaim_bytes = reclaim_bytes.saturating_add(bytes);
+        planned_dirs += item.report.artifacts.len();
+        reclaim_bytes = reclaim_bytes.saturating_add(item.report.total_size_bytes);
     }
 
     (planned_dirs, reclaim_bytes, selected_repos)
@@ -1265,6 +1259,26 @@ fn progress_line(app: &App) -> String {
             done
         ),
     }
+}
+
+fn help_line() -> Line<'static> {
+    let key_style = Style::default().fg(Color::LightBlue);
+    Line::from(vec![
+        Span::styled("↑/↓", key_style),
+        Span::raw(" move  "),
+        Span::styled("Space", key_style),
+        Span::raw(" toggle  "),
+        Span::styled("a", key_style),
+        Span::raw(" all  "),
+        Span::styled("n", key_style),
+        Span::raw(" none  "),
+        Span::styled("Tab", key_style),
+        Span::raw(" sort  "),
+        Span::styled("⏎", key_style),
+        Span::raw(" clean  "),
+        Span::styled("q", key_style),
+        Span::raw(" quit"),
+    ])
 }
 
 fn spawn_clean_worker(
