@@ -1,0 +1,36 @@
+{
+  "name": "clean-code",
+  "version": "0.1.0",
+  "description": "Scan and clean gitignored build artifacts per Git repo.",
+  "license": "UNLICENSED",
+  "bin": {
+    "clean-code": "bin/clean-code.js"
+  },
+  "scripts": {
+    "postinstall": "node scripts/install.js"
+  },
+  "dependencies": {
+    "http-proxy-agent": "^7.0.2",
+    "https-proxy-agent": "^7.0.2",
+    "proxy-from-env": "^1.1.0"
+  },
+  "files": [
+    "bin/",
+    "scripts/",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zxch3n/clean-code.git"
+  },
+  "bugs": {
+    "url": "https://github.com/zxch3n/clean-code/issues"
+  },
+  "homepage": "https://github.com/zxch3n/clean-code#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=14"
+  }
+}

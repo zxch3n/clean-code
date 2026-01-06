@@ -1,111 +1,145 @@
 # clean-code
 
-一个用于“按 Git 仓库聚合”统计并清理 **被 `.gitignore` 忽略的构建产物（artifacts）** 的小工具。
+A small, super fast tool to scan and remove **gitignored build artifacts** (e.g. `target/`, `node_modules/`, `dist/`) across a workspace, **grouped by Git repo root**.
 
-核心行为（scan + clean）：
+Instead of blindly deleting by directory name, it verifies candidates with `git check-ignore` first.
 
-- 从 `--root`（默认当前目录）开始递归扫描所有子目录
-- 发现疑似 artifacts 的目录名后（例如 `target/`、`node_modules/`、`dist/`），使用 `git check-ignore` 判定其是否真的被忽略
-- 对被忽略的目录计算体积与最近修改时间（递归累加文件大小；默认不跟随 symlink）
-- 按 “artifact 所属的最近 Git 仓库根目录” 分组
-- 默认进入 TUI：默认预选 “最近修改时间距今 >= 180d 且体积 >= 1MiB” 的 repos，回车后删除选中 repos 下的 artifacts
-- 也支持 `scan` 子命令：按每个仓库的最新 commit 时间从老到新排序输出统计结果
+## What it does
+
+- Recursively scans from `--root` (default: current directory).
+- When a directory name matches the built-in (or user-provided) artifact list, it:
+  - finds the nearest Git repo root (`.git`),
+  - checks if the directory is actually ignored by that repo (`git check-ignore`),
+  - computes total size and newest mtime (recursive; skips symlinks),
+  - groups results by repo root.
+- Default mode is an interactive TUI:
+  - auto-selects repos whose artifacts are **>= 180 days old** and **>= `--min-size`** (default `1MiB`),
+  - deletes selected repos’ artifacts after a confirmation step.
+- `scan` mode prints a report sorted by repo head commit time (oldest first).
+
+## Install
+
+Option 1: via npm (prebuilt binary)
+
+```bash
+npx clean-code
+# or
+npm i -g clean-code
+```
+
+Option 2: build from source (Rust required)
+
+```bash
+# From the project root
+cargo install --path .
+
+# Or run directly
+cargo run --release -- --help
+```
 
 ## Usage
 
-默认（TUI）：
+Default (TUI):
 
 ```bash
-cargo run --release
+clean-code
 ```
 
-指定扫描根目录：
+Choose scan root:
 
 ```bash
-cargo run --release -- --root /path/to/workspace
+clean-code --root /path/to/workspace
 ```
 
-设置线程数（Rayon）：
+Control parallelism (Rayon):
 
 ```bash
-cargo run --release -- --threads 8
+clean-code --threads 8
 ```
 
-TUI 参数：
+TUI options:
 
 ```bash
-cargo run --release -- tui --min-size 1MiB
+clean-code tui --min-size 1MiB
+clean-code tui --dry-run
 ```
 
-TUI 键位：
-
-- Up/Down：移动
-- Space：切换选中
-- a：全选
-- n：全不选
-- Tab：切换排序（age/size）
-- Enter：确认并删除（会有二次确认）
-- q / Esc：退出
-
-预览删除（不实际删除）：
+Scan-only report (no TUI):
 
 ```bash
-cargo run --release -- tui --dry-run
+clean-code scan
 ```
 
-仅输出统计（scan）：
+Add artifact dir names (repeatable):
 
 ```bash
-cargo run --release -- scan
+clean-code --artifact .gradle --artifact .venv
 ```
 
-追加自定义 artifacts 目录名：
+Only use your custom list (disable built-ins):
 
 ```bash
-cargo run --release -- --artifact .gradle --artifact .venv
+clean-code --no-default-artifacts --artifact target --artifact node_modules
 ```
 
-仅使用自定义列表（禁用默认清单）：
+Run `clean-code --help` for the full CLI reference.
 
-```bash
-cargo run --release -- --no-default-artifacts --artifact target --artifact node_modules
-```
+## TUI keybindings
+
+- Up/Down: move cursor
+- Space: toggle selection
+- a: select all
+- n: select none
+- Tab: toggle sort (age/size)
+- Enter: confirm and delete (with a second confirmation)
+- q / Esc: quit
 
 ## Default artifact dir names
 
-默认会识别以下目录名（最终是否计入仍以 `git check-ignore` 为准）：
+These directory names are treated as candidates (they are only counted/deleted if `git check-ignore` says they are ignored):
 
 - `target`
-- `node_modules`
-- `bower_components`
 - `dist`
 - `build`
 - `out`
+- `bin`
+- `obj`
+- `Debug`
+- `Release`
+- `node_modules`
+- `bower_components`
+- `elm-stuff`
 - `.next`
 - `.nuxt`
 - `.svelte-kit`
 - `.astro`
+- `storybook-static`
+- `_site`
+- `public`
 - `.vercel`
 - `.turbo`
 - `.cache`
 - `.parcel-cache`
 - `.vite`
 - `.angular`
-- `.gradle`
-- `.terraform`
-- `.serverless`
-- `.dart_tool`
+- `__pycache__`
+- `.pytest_cache`
+- `.mypy_cache`
+- `.ruff_cache`
+- `.tox`
+- `.nox`
 - `.venv`
 - `venv`
 - `env`
 - `ENV`
-- `.tox`
-- `.nox`
 - `.direnv`
-- `bin`
-- `obj`
-- `Debug`
-- `Release`
+- `.ipynb_checkpoints`
+- `htmlcov`
+- `.pyre`
+- `.pytype`
+- `.gradle`
+- `dist-newstyle`
+- `.stack-work`
 - `.vs`
 - `packages`
 - `CMakeFiles`
@@ -118,27 +152,16 @@ cargo run --release -- --no-default-artifacts --artifact target --artifact node_
 - `.swiftpm`
 - `.build`
 - `DerivedData`
+- `.dart_tool`
+- `.terraform`
+- `.serverless`
 - `coverage`
-- `.pytest_cache`
-- `__pycache__`
-- `.mypy_cache`
-- `.ruff_cache`
-- `.ipynb_checkpoints`
-- `htmlcov`
-- `.pyre`
-- `.pytype`
-- `elm-stuff`
-- `storybook-static`
-- `_site`
-- `public`
-- `dist-newstyle`
-- `.stack-work`
 - `tmp`
 - `temp`
 
 ## Notes
 
-- 体积统计为 “文件大小之和”，不等同于磁盘块占用（`du`）。
-- 目录判定依赖本机 `git` 可执行文件，并以 Git 的 ignore 规则为准（含 `.gitignore` / `.git/info/exclude` / global excludes）。
-- 为了安全，默认清单会跳过少数可能包含本地状态的目录（例如 `.pulumi` / `.vagrant`）；如确有需要，可用 `--artifact` 显式追加。
-- TUI 基于 `ratatui` + `crossterm`，理论上可跨平台运行；如遇键位/渲染异常，优先检查终端类型与输入法/快捷键冲突。
+- Size is computed as the sum of file sizes (not disk blocks like `du`).
+- Requires `git` on `PATH` and follows Git ignore rules (`.gitignore`, `.git/info/exclude`, global excludes).
+- The built-in list intentionally does not include some stateful directories (e.g. `.pulumi`, `.vagrant`). Add them explicitly via `--artifact` if you really want to clean them.
+- The TUI is built with `ratatui` + `crossterm`. If keybindings/rendering are odd, check your terminal settings and input method conflicts.
