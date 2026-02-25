@@ -66,21 +66,26 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             use_cross: false
-          - os: ubuntu-latest
+            glibc_max: "2.36"
+          - os: ubuntu-22.04
             target: aarch64-unknown-linux-gnu
             use_cross: true
+            glibc_max: ""
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             use_cross: false
+            glibc_max: ""
           - os: macos-13
             target: x86_64-apple-darwin
             use_cross: false
+            glibc_max: ""
           - os: macos-14
             target: aarch64-apple-darwin
             use_cross: false
+            glibc_max: ""
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -108,6 +113,38 @@ jobs:
             cross build --release --locked --target "${{ matrix.target }}"
           else
             cargo build --release --locked --target "${{ matrix.target }}"
+          fi
+
+      - name: Verify GLIBC compatibility
+        if: matrix.glibc_max != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="target/${{ matrix.target }}/release/clean-my-code"
+
+          glibc_versions="$(
+            objdump -T "${bin}" \
+              | grep -oE 'GLIBC_[0-9]+(\.[0-9]+)+' \
+              | sed 's/GLIBC_//' \
+              | sort -Vu
+          )"
+
+          if [[ -z "${glibc_versions}" ]]; then
+            echo "Failed to detect required GLIBC versions in ${bin}" >&2
+            exit 1
+          fi
+
+          max_required="$(printf '%s\n' "${glibc_versions}" | tail -n1)"
+          allowed="${{ matrix.glibc_max }}"
+
+          echo "Detected GLIBC versions:"
+          printf '%s\n' "${glibc_versions}"
+          echo "Maximum required: ${max_required}"
+          echo "Allowed maximum: ${allowed}"
+
+          if [[ "$(printf '%s\n' "${max_required}" "${allowed}" | sort -V | tail -n1)" != "${allowed}" ]]; then
+            echo "Binary requires GLIBC_${max_required}, exceeds GLIBC_${allowed}" >&2
+            exit 1
           fi
 
       - name: Prepare asset

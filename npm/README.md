@@ -64,9 +64,13 @@ Prebuilt binaries are provided for:
 - Linux (gnu): `x64`, `arm64`
 - Windows (MSVC): `x64`
 
+For Linux `x64` prebuilt releases (`x86_64-unknown-linux-gnu`), CI enforces
+that required GLIBC symbols do not exceed `GLIBC_2.36`.
+
 If your platform isn’t covered, build from source (Rust required).
 
 ## Install Details & Troubleshooting
 
 - This package downloads a prebuilt binary during `npm install` into `vendor/` and runs it via a small JS shim at `bin/clean-my-code.js`.
 - To use a custom mirror, set `CLEAN_MY_CODE_DOWNLOAD_BASE` (or legacy `CLEAN_CODE_DOWNLOAD_BASE`) to a base URL that mirrors the GitHub Releases layout.
+- Git worktree and other multi-level layouts are supported; scanning probes 1-2 levels below non-repo directories to find nested git repos.

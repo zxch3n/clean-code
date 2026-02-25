@@ -16,6 +16,7 @@ pub struct DirStats {
 
 pub fn scan_artifact_dirs(root: &Path, artifact_dir_names: &HashSet<OsString>) -> Vec<PathBuf> {
     let results: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
+    let root_is_git = has_dot_git(root);
 
     rayon::scope(|scope| {
         scan_dir(
@@ -23,6 +24,7 @@ pub fn scan_artifact_dirs(root: &Path, artifact_dir_names: &HashSet<OsString>) -
             root.to_path_buf(),
             artifact_dir_names,
             Arc::clone(&results),
+            root_is_git,
         );
     });
 
@@ -136,6 +138,7 @@ fn scan_dir<'scope>(
     dir: PathBuf,
     artifact_dir_names: &'scope HashSet<OsString>,
     results: Arc<Mutex<Vec<PathBuf>>>,
+    in_git_repo: bool,
 ) {
     let entries = match std::fs::read_dir(&dir) {
         Ok(entries) => entries,
@@ -171,8 +174,31 @@ fn scan_dir<'scope>(
             continue;
         }
 
-        let results = Arc::clone(&results);
-        scope.spawn(move |scope| scan_dir(scope, path, artifact_dir_names, results));
+        if in_git_repo {
+            let results = Arc::clone(&results);
+            scope.spawn(move |scope| scan_dir(scope, path, artifact_dir_names, results, true));
+            continue;
+        }
+
+        if has_dot_git(&path) {
+            let results = Arc::clone(&results);
+            scope.spawn(move |scope| scan_dir(scope, path, artifact_dir_names, results, true));
+            continue;
+        }
+
+        // Generic multi-level layout support:
+        // if a directory is not a repo itself, probe 1-2 levels below for nested repos.
+        let nested_git_roots = find_nested_git_roots(&path, 2);
+        if nested_git_roots.is_empty() {
+            let results = Arc::clone(&results);
+            scope.spawn(move |scope| scan_dir(scope, path, artifact_dir_names, results, false));
+            continue;
+        }
+
+        for repo_root in nested_git_roots {
+            let results = Arc::clone(&results);
+            scope.spawn(move |scope| scan_dir(scope, repo_root, artifact_dir_names, results, true));
+        }
     }
 }
 
@@ -191,5 +217,120 @@ impl DirStats {
             Some(existing) if existing >= other => Some(existing),
             _ => Some(other),
         };
+    }
+}
+
+fn has_dot_git(path: &Path) -> bool {
+    std::fs::metadata(path.join(".git")).is_ok()
+}
+
+fn find_nested_git_roots(start: &Path, max_depth: usize) -> Vec<PathBuf> {
+    let mut stack = vec![(start.to_path_buf(), 0usize)];
+    let mut roots = Vec::new();
+
+    while let Some((dir, depth)) = stack.pop() {
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(_) => continue,
+        };
+
+        for entry in entries {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(_) => continue,
+            };
+            let file_type = match entry.file_type() {
+                Ok(file_type) => file_type,
+                Err(_) => continue,
+            };
+            if !file_type.is_dir() {
+                continue;
+            }
+
+            let file_name = entry.file_name();
+            if file_name == ".git" {
+                continue;
+            }
+
+            let path = entry.path();
+            if has_dot_git(&path) {
+                roots.push(path);
+                continue;
+            }
+
+            if depth < max_depth {
+                stack.push((path, depth + 1));
+            }
+        }
+    }
+
+    roots.sort();
+    roots.dedup();
+    roots
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{
+        collections::HashSet,
+        ffi::OsString,
+        fs,
+        path::PathBuf,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    #[test]
+    fn scan_uses_nested_git_probe_for_multi_level_layout() {
+        let root = make_temp_dir("clean-my-code-scan");
+        let repo = root.join("repo");
+
+        fs::create_dir_all(repo.join("bare.git/objects/target")).unwrap();
+        fs::create_dir_all(repo.join("bare.git/refs")).unwrap();
+        fs::write(repo.join("bare.git/HEAD"), "ref: refs/heads/main\n").unwrap();
+
+        let worktree_target = repo.join("worktrees/w1/target");
+        fs::create_dir_all(&worktree_target).unwrap();
+        fs::write(
+            repo.join("worktrees/w1/.git"),
+            "gitdir: ../../bare.git/worktrees/w1\n",
+        )
+        .unwrap();
+
+        let mut artifact_dir_names = HashSet::new();
+        artifact_dir_names.insert(OsString::from("target"));
+
+        let found = scan_artifact_dirs(&root, &artifact_dir_names);
+        assert_eq!(found, vec![worktree_target]);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn scan_falls_back_to_deeper_walk_when_probe_misses() {
+        let root = make_temp_dir("clean-my-code-scan");
+        let repo_root = root.join("a/b/c/d/repo");
+        let target = repo_root.join("target");
+
+        fs::create_dir_all(&target).unwrap();
+        fs::write(repo_root.join(".git"), "gitdir: /tmp/fake\n").unwrap();
+
+        let mut artifact_dir_names = HashSet::new();
+        artifact_dir_names.insert(OsString::from("target"));
+
+        let found = scan_artifact_dirs(&root, &artifact_dir_names);
+        assert_eq!(found, vec![target]);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    fn make_temp_dir(prefix: &str) -> PathBuf {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("{prefix}-{}-{stamp}", std::process::id()));
+        fs::create_dir_all(&path).unwrap();
+        path
     }
 }

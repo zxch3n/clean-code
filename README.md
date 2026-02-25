@@ -163,5 +163,7 @@ These directory names are treated as candidates (they are only counted/deleted i
 
 - Size is computed as the sum of file sizes (not disk blocks like `du`).
 - Requires `git` on `PATH` and follows Git ignore rules (`.gitignore`, `.git/info/exclude`, global excludes).
+- Git worktree and other multi-level layouts are supported; when a directory is not a repo, scan probes 1-2 levels below for nested git repos.
+- Linux prebuilt releases (`x86_64-unknown-linux-gnu`) are CI-checked to require at most `GLIBC_2.36`.
 - The built-in list intentionally does not include some stateful directories (e.g. `.pulumi`, `.vagrant`). Add them explicitly via `--artifact` if you really want to clean them.
 - The TUI is built with `ratatui` + `crossterm`. If keybindings/rendering are odd, check your terminal settings and input method conflicts.
