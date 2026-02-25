@@ -2,6 +2,8 @@
 
 A small, super fast tool to scan and remove **gitignored build artifacts** (e.g. `target/`, `node_modules/`, `dist/`) across a workspace, **grouped by Git repo root**.
 
+<img width="1294" height="1166" alt="CleanShot 2026-01-06 at 16 16 54@2x" src="https://github.com/user-attachments/assets/2428085f-8627-41f7-9f96-59abadafd567" />
+
 Instead of blindly deleting by directory name, it verifies candidates with `git check-ignore` first.
 
 ## What it does
