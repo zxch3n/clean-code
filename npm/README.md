@@ -46,6 +46,8 @@ clean-my-code --no-default-artifacts --artifact target --artifact node_modules
 
 Run `clean-my-code --help` for the full CLI reference.
 
+Stateful infrastructure directories such as `.terraform` are intentionally excluded from the built-in artifact list. Add them explicitly via `--artifact` only if you are sure they are safe to remove.
+
 ## TUI keybindings
 
 - Up/Down: move cursor

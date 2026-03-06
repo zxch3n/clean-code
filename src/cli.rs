@@ -5,7 +5,7 @@ use clap::{Args, Parser, Subcommand};
 
 use crate::{report::collect_reports, report::print_scan_report, tui::TuiOptions};
 
-const DEFAULT_ARTIFACT_DIR_NAMES: [&str; 60] = [
+const DEFAULT_ARTIFACT_DIR_NAMES: [&str; 59] = [
     // General build outputs.
     "target",
     "dist",
@@ -70,7 +70,6 @@ const DEFAULT_ARTIFACT_DIR_NAMES: [&str; 60] = [
     // Mobile / Flutter.
     ".dart_tool",
     // Infra / DevOps.
-    ".terraform",
     ".serverless",
     // Misc.
     "coverage",
@@ -231,5 +230,18 @@ fn run_with_cli(cli: Cli) -> Result<()> {
                 dry_run: args.dry_run,
             },
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DEFAULT_ARTIFACT_DIR_NAMES;
+
+    #[test]
+    fn default_artifacts_do_not_include_terraform_state_dirs() {
+        assert!(
+            !DEFAULT_ARTIFACT_DIR_NAMES.contains(&".terraform"),
+            "default artifacts must not include .terraform because it can contain state"
+        );
     }
 }
