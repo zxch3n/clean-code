@@ -46,7 +46,7 @@ clean-my-code --no-default-artifacts --artifact target --artifact node_modules
 
 Run `clean-my-code --help` for the full CLI reference.
 
-Stateful infrastructure directories such as `.terraform` are intentionally excluded from the built-in artifact list. Add them explicitly via `--artifact` only if you are sure they are safe to remove.
+The built-in artifact list is intentionally conservative. It excludes stateful or user-managed directories that may contain secrets, deployment metadata, uploads, or local state, such as `.terraform`, `.direnv`, `.vercel`, `.serverless`, `public`, `packages`, `bin`, and `tmp`. Add them explicitly via `--artifact` only if you are sure they are safe to remove.
 
 ## TUI keybindings
 

@@ -5,13 +5,12 @@ use clap::{Args, Parser, Subcommand};
 
 use crate::{report::collect_reports, report::print_scan_report, tui::TuiOptions};
 
-const DEFAULT_ARTIFACT_DIR_NAMES: [&str; 59] = [
+const DEFAULT_ARTIFACT_DIR_NAMES: &[&str] = &[
     // General build outputs.
     "target",
     "dist",
     "build",
     "out",
-    "bin",
     "obj",
     "Debug",
     "Release",
@@ -25,10 +24,7 @@ const DEFAULT_ARTIFACT_DIR_NAMES: [&str; 59] = [
     ".astro",
     "storybook-static",
     "_site",
-    "public",
-    ".vercel",
     ".turbo",
-    ".cache",
     ".parcel-cache",
     ".vite",
     ".angular",
@@ -41,9 +37,6 @@ const DEFAULT_ARTIFACT_DIR_NAMES: [&str; 59] = [
     ".nox",
     ".venv",
     "venv",
-    "env",
-    "ENV",
-    ".direnv",
     ".ipynb_checkpoints",
     "htmlcov",
     ".pyre",
@@ -54,7 +47,6 @@ const DEFAULT_ARTIFACT_DIR_NAMES: [&str; 59] = [
     ".stack-work",
     // .NET / Visual Studio.
     ".vs",
-    "packages",
     // CMake (CLion).
     "CMakeFiles",
     "cmake-build-debug",
@@ -69,12 +61,8 @@ const DEFAULT_ARTIFACT_DIR_NAMES: [&str; 59] = [
     "DerivedData",
     // Mobile / Flutter.
     ".dart_tool",
-    // Infra / DevOps.
-    ".serverless",
     // Misc.
     "coverage",
-    "tmp",
-    "temp",
 ];
 
 #[derive(Parser, Debug)]
@@ -187,7 +175,12 @@ fn run_with_cli(cli: Cli) -> Result<()> {
 
     let mut artifact_dir_names: HashSet<OsString> = HashSet::new();
     if !cli.common.no_default_artifacts {
-        artifact_dir_names.extend(DEFAULT_ARTIFACT_DIR_NAMES.map(OsString::from));
+        artifact_dir_names.extend(
+            DEFAULT_ARTIFACT_DIR_NAMES
+                .iter()
+                .copied()
+                .map(OsString::from),
+        );
     }
     artifact_dir_names.extend(cli.common.artifacts.into_iter().map(OsString::from));
 
@@ -238,10 +231,25 @@ mod tests {
     use super::DEFAULT_ARTIFACT_DIR_NAMES;
 
     #[test]
-    fn default_artifacts_do_not_include_terraform_state_dirs() {
-        assert!(
-            !DEFAULT_ARTIFACT_DIR_NAMES.contains(&".terraform"),
-            "default artifacts must not include .terraform because it can contain state"
-        );
+    fn default_artifacts_exclude_stateful_or_user_managed_dirs() {
+        for name in [
+            ".terraform",
+            ".direnv",
+            ".vercel",
+            ".serverless",
+            ".cache",
+            "public",
+            "packages",
+            "bin",
+            "env",
+            "ENV",
+            "tmp",
+            "temp",
+        ] {
+            assert!(
+                !DEFAULT_ARTIFACT_DIR_NAMES.contains(&name),
+                "default artifacts must not include {name} because it may contain local state, secrets, or user-managed data"
+            );
+        }
     }
 }

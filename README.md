@@ -104,7 +104,6 @@ These directory names are treated as candidates (they are only counted/deleted i
 - `dist`
 - `build`
 - `out`
-- `bin`
 - `obj`
 - `Debug`
 - `Release`
@@ -117,10 +116,7 @@ These directory names are treated as candidates (they are only counted/deleted i
 - `.astro`
 - `storybook-static`
 - `_site`
-- `public`
-- `.vercel`
 - `.turbo`
-- `.cache`
 - `.parcel-cache`
 - `.vite`
 - `.angular`
@@ -132,9 +128,6 @@ These directory names are treated as candidates (they are only counted/deleted i
 - `.nox`
 - `.venv`
 - `venv`
-- `env`
-- `ENV`
-- `.direnv`
 - `.ipynb_checkpoints`
 - `htmlcov`
 - `.pyre`
@@ -143,7 +136,6 @@ These directory names are treated as candidates (they are only counted/deleted i
 - `dist-newstyle`
 - `.stack-work`
 - `.vs`
-- `packages`
 - `CMakeFiles`
 - `cmake-build-debug`
 - `cmake-build-release`
@@ -155,10 +147,7 @@ These directory names are treated as candidates (they are only counted/deleted i
 - `.build`
 - `DerivedData`
 - `.dart_tool`
-- `.serverless`
 - `coverage`
-- `tmp`
-- `temp`
 
 ## Notes
 
@@ -166,5 +155,5 @@ These directory names are treated as candidates (they are only counted/deleted i
 - Requires `git` on `PATH` and follows Git ignore rules (`.gitignore`, `.git/info/exclude`, global excludes).
 - Git worktree and other multi-level layouts are supported; when a directory is not a repo, scan probes 1-2 levels below for nested git repos.
 - Linux prebuilt releases (`x86_64-unknown-linux-gnu`) are CI-checked to require at most `GLIBC_2.36`.
-- The built-in list intentionally does not include some stateful directories (e.g. `.terraform`, `.pulumi`, `.vagrant`). Add them explicitly via `--artifact` if you really want to clean them.
+- The built-in list is intentionally conservative. It excludes stateful or user-managed directories that may contain secrets, deployment metadata, uploads, or local state (e.g. `.terraform`, `.direnv`, `.vercel`, `.serverless`, `public`, `packages`, `bin`, `tmp`, `.pulumi`, `.vagrant`). Add them explicitly via `--artifact` only if you are sure they are safe to remove.
 - The TUI is built with `ratatui` + `crossterm`. If keybindings/rendering are odd, check your terminal settings and input method conflicts.
