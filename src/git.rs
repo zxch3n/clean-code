@@ -28,15 +28,15 @@ pub fn is_git_ignored(repo_root: &Path, path: &Path) -> Result<bool> {
         format!("path is not under repo root: repo={repo_root:?}, path={path:?}")
     })?;
 
-    let status = Command::new("git")
+    let output = Command::new("git")
         .arg("-C")
         .arg(repo_root)
         .args(["check-ignore", "--quiet", "--"])
         .arg(rel)
-        .status()
+        .output()
         .with_context(|| format!("failed to run git check-ignore in {repo_root:?}"))?;
 
-    match status.code() {
+    match output.status.code() {
         Some(0) => Ok(true),
         Some(1) => Ok(false),
         Some(code) => Err(anyhow!("git check-ignore failed with exit code {code}")),

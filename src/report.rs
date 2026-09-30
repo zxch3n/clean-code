@@ -123,26 +123,12 @@ pub fn print_scan_report(scan_root: &Path, reports: &[RepoReport]) {
 
 pub fn process_candidate(path: &Path) -> Option<ArtifactRecord> {
     let repo_root = crate::git::find_git_root(path)?;
-    let is_ignored = match is_git_ignored(&repo_root, path) {
-        Ok(is_ignored) => is_ignored,
-        Err(err) => {
-            eprintln!(
-                "warn: git check-ignore failed: repo={repo_root:?} path={path:?} err={err:#}"
-            );
-            return None;
-        }
-    };
+    let is_ignored = is_git_ignored(&repo_root, path).ok()?;
     if !is_ignored {
         return None;
     }
 
-    let stats = match dir_stats(path) {
-        Ok(stats) => stats,
-        Err(err) => {
-            eprintln!("warn: stats calculation failed: path={path:?} err={err:#}");
-            return None;
-        }
-    };
+    let stats = dir_stats(path).ok()?;
 
     Some(ArtifactRecord {
         repo_root,
