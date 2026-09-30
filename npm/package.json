@@ -1,6 +1,6 @@
 {
   "name": "clean-my-code",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Scan and clean gitignored build artifacts per Git repo.",
   "license": "UNLICENSED",
   "bin": {
