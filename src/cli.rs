@@ -1,9 +1,21 @@
-use std::{collections::HashSet, ffi::OsString, path::PathBuf, str::FromStr};
+use std::{
+    collections::HashSet,
+    ffi::OsString,
+    io::{self, IsTerminal, Write},
+    path::{Path, PathBuf},
+    str::FromStr,
+    time::SystemTime,
+};
 
 use anyhow::{Context, Result, anyhow};
 use clap::{Args, Parser, Subcommand};
 
-use crate::{report::collect_reports, report::print_scan_report, tui::TuiOptions};
+use crate::{
+    clean::{execute_delete_with_progress, plan_delete_targets},
+    format::format_bytes,
+    report::{RepoReport, collect_reports, print_scan_report},
+    tui::TuiOptions,
+};
 
 const DEFAULT_ARTIFACT_DIR_NAMES: &[&str] = &[
     // General build outputs.
@@ -93,9 +105,32 @@ struct CommonArgs {
 
 #[derive(Subcommand, Debug, Clone)]
 enum Command {
+    /// Print a scan report without deleting anything.
     Scan,
 
+    /// Scan, preview, and delete artifacts from matching repos without a TUI.
+    Clean(CleanArgs),
+
     Tui(TuiArgs),
+}
+
+#[derive(Args, Debug, Clone)]
+struct CleanArgs {
+    /// Minimum total artifact size per repo.
+    #[arg(long, default_value = "1MiB")]
+    min_size: ByteSize,
+
+    /// Minimum age in days of the newest artifact modification per repo (0 disables age filtering).
+    #[arg(long, default_value_t = 180)]
+    older_than: u64,
+
+    /// Preview matching paths without deleting anything or asking for confirmation.
+    #[arg(long)]
+    dry_run: bool,
+
+    /// Delete without prompting (required for non-interactive use).
+    #[arg(short = 'y', long)]
+    yes: bool,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -196,11 +231,16 @@ fn run_with_cli(cli: Cli) -> Result<()> {
     });
 
     match command {
-        Command::Scan => {
+        Command::Scan | Command::Clean(_) => {
             let run_scan = || -> Result<()> {
                 let reports = collect_reports(&scan_root, &artifact_dir_names);
-                print_scan_report(&scan_root, &reports);
-                Ok(())
+                match &command {
+                    Command::Clean(args) => run_clean(&scan_root, reports, args),
+                    _ => {
+                        print_scan_report(&scan_root, &reports);
+                        Ok(())
+                    }
+                }
             };
 
             match cli.common.threads {
@@ -226,9 +266,122 @@ fn run_with_cli(cli: Cli) -> Result<()> {
     }
 }
 
+fn matches_clean_filters(report: &RepoReport, args: &CleanArgs, now: SystemTime) -> bool {
+    if report.artifacts.is_empty() || report.total_size_bytes < args.min_size.as_u64() {
+        return false;
+    }
+    if args.older_than == 0 {
+        return true;
+    }
+    report
+        .newest_mtime
+        .and_then(|mtime| now.duration_since(mtime).ok())
+        .is_some_and(|age| age.as_secs() / 86_400 >= args.older_than)
+}
+
+fn run_clean(scan_root: &Path, mut reports: Vec<RepoReport>, args: &CleanArgs) -> Result<()> {
+    let now = SystemTime::now();
+    reports.retain(|report| matches_clean_filters(report, args, now));
+    print_scan_report(scan_root, &reports);
+    let targets = plan_delete_targets(reports.iter().map(|report| (report, true)));
+    if targets.is_empty() {
+        println!("Nothing to clean for the current filters.");
+        return Ok(());
+    }
+    let planned_bytes = targets.iter().map(|target| target.planned_bytes).sum();
+    println!(
+        "Plan: delete {} artifact dirs from {} repos ({}){}",
+        targets.len(),
+        reports.len(),
+        format_bytes(planned_bytes),
+        if args.dry_run { " [dry-run]" } else { "" }
+    );
+
+    if !args.dry_run && !args.yes {
+        if !io::stdin().is_terminal() {
+            anyhow::bail!(
+                "confirmation requires a terminal; use --yes to delete or --dry-run to preview"
+            );
+        }
+        print!("Delete these directories? [y/N] ");
+        io::stdout().flush()?;
+        let mut answer = String::new();
+        io::stdin().read_line(&mut answer)?;
+        if !matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
+            println!("Canceled. Nothing deleted.");
+            return Ok(());
+        }
+    }
+
+    let summary = execute_delete_with_progress(&targets, args.dry_run, || false, |_| {});
+    if args.dry_run {
+        println!(
+            "Dry run complete. Nothing deleted. Skipped: {}",
+            summary.skipped_paths
+        );
+    } else {
+        println!(
+            "Deleted: {} dirs ({})  Skipped: {}  Errors: {}",
+            summary.deleted_paths,
+            format_bytes(summary.deleted_bytes),
+            summary.skipped_paths,
+            summary.errors.len()
+        );
+    }
+    for (path, err) in &summary.errors {
+        eprintln!("error: {}: {err:#}", path.display());
+    }
+    if !summary.errors.is_empty() {
+        anyhow::bail!("cleanup encountered {} error(s)", summary.errors.len());
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::DEFAULT_ARTIFACT_DIR_NAMES;
+    use super::*;
+    use crate::{report::ArtifactRecord, scan::DirStats};
+    use std::time::Duration;
+
+    #[test]
+    fn cleanup_age_filter_handles_boundary_missing_and_future_times() {
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(200 * 86_400);
+        let args = CleanArgs {
+            min_size: ByteSize(1),
+            older_than: 180,
+            dry_run: true,
+            yes: false,
+        };
+        let mut report = RepoReport {
+            repo_root: PathBuf::from("repo"),
+            head: None,
+            artifacts: vec![ArtifactRecord {
+                repo_root: PathBuf::from("repo"),
+                path: PathBuf::from("repo/target"),
+                stats: DirStats::default(),
+            }],
+            total_size_bytes: 1,
+            newest_mtime: None,
+        };
+        for (mtime, expected) in [
+            (None, false),
+            (Some(now + Duration::from_secs(1)), false),
+            (Some(now - Duration::from_secs(180 * 86_400 - 1)), false),
+            (Some(now - Duration::from_secs(180 * 86_400)), true),
+        ] {
+            report.newest_mtime = mtime;
+            assert_eq!(matches_clean_filters(&report, &args, now), expected);
+        }
+        report.newest_mtime = None;
+        assert!(matches_clean_filters(
+            &report,
+            &CleanArgs {
+                older_than: 0,
+                ..args
+            },
+            now
+        ));
+    }
 
     #[test]
     fn default_artifacts_exclude_stateful_or_user_managed_dirs() {

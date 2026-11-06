@@ -18,6 +18,7 @@ Instead of blindly deleting by directory name, it verifies candidates with `git 
   - auto-selects repos whose artifacts are **>= 180 days old** and **>= `--min-size`** (default `1MiB`),
   - deletes selected repos’ artifacts after a confirmation step.
 - `scan` mode prints a report sorted by repo head commit time (oldest first).
+- `clean` mode scans and deletes matching repos’ artifacts without a TUI, with a preview and confirmation.
 
 ## Install
 
@@ -85,6 +86,37 @@ clean-my-code --no-default-artifacts --artifact target --artifact node_modules
 ```
 
 Run `clean-my-code --help` for the full CLI reference.
+
+### CLI cleanup (no TUI)
+
+```bash
+# Preview the directories that would be deleted
+clean-my-code --root /path/to/workspace clean --dry-run
+
+# Scan, show the plan, then ask for confirmation
+clean-my-code --root /path/to/workspace clean
+
+# Delete without prompting (for scripts)
+clean-my-code --root /path/to/workspace clean --yes
+
+# Customize age (days) and minimum total size per repo
+clean-my-code --root /path/to/workspace clean --older-than 30 --min-size 100MiB --dry-run
+
+# Disable age and size filtering explicitly
+clean-my-code --root /path/to/workspace clean --older-than 0 --min-size 0 --yes
+```
+
+Filters apply to each repo as a whole: by default, its combined artifact size must
+be at least `1MiB`, and its newest artifact modification must be at least 180 days
+old (including directories and nested files, not the Git commit date). All scanned
+artifacts in a matching repo are included. Unknown or future modification times
+are excluded when age filtering is enabled. `--older-than 0` disables age filtering.
+
+`--dry-run` never deletes, even with `--yes`. Without `--yes`, deletion requires
+confirmation in a terminal; scripts must pass `--yes`. Only configured artifact
+directories ignored by Git are eligible, and Git ignore rules are checked again
+before deletion. Cleanup errors produce a nonzero exit code; earlier successful
+deletions are not rolled back.
 
 ## TUI keybindings
 
