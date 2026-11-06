@@ -4,7 +4,15 @@ on:
   push:
     tags:
       - "v*"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build (for example v0.3.0)
+        required: true
+        type: string
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
 permissions:
   contents: write
@@ -15,12 +23,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Verify versions match tag
         shell: bash
         run: |
           set -euo pipefail
-          tag_version="${GITHUB_REF_NAME#v}"
+          tag_version="${RELEASE_TAG#v}"
 
           cargo_version="$(python - <<'PY'
           import tomllib
@@ -49,7 +59,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF_NAME}"
+          tag="${RELEASE_TAG}"
 
           if gh release view "${tag}" >/dev/null 2>&1; then
             echo "Release ${tag} already exists"
@@ -82,7 +92,7 @@ jobs:
             target: x86_64-apple-darwin
             use_cross: false
             glibc_max: ""
-          - os: macos-14
+          - os: macos-15
             target: aarch64-apple-darwin
             use_cross: false
             glibc_max: ""
@@ -91,6 +101,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -151,7 +163,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
+          version="${RELEASE_TAG#v}"
           target="${{ matrix.target }}"
 
           bin="clean-my-code"
@@ -175,4 +187,4 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release upload "${GITHUB_REF_NAME}" "${ASSET}" --clobber
+          gh release upload "${RELEASE_TAG}" "${ASSET}" --clobber
