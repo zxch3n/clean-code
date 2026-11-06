@@ -277,8 +277,11 @@ mod tests {
         ffi::OsString,
         fs,
         path::PathBuf,
+        sync::atomic::{AtomicU64, Ordering},
         time::{SystemTime, UNIX_EPOCH},
     };
+
+    static NEXT_TEMP_DIR: AtomicU64 = AtomicU64::new(0);
 
     #[test]
     fn scan_uses_nested_git_probe_for_multi_level_layout() {
@@ -329,7 +332,11 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let path = std::env::temp_dir().join(format!("{prefix}-{}-{stamp}", std::process::id()));
+        let path = std::env::temp_dir().join(format!(
+            "{prefix}-{}-{stamp}-{}",
+            std::process::id(),
+            NEXT_TEMP_DIR.fetch_add(1, Ordering::Relaxed)
+        ));
         fs::create_dir_all(&path).unwrap();
         path
     }
